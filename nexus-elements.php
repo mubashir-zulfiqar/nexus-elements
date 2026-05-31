@@ -4,7 +4,7 @@
  * Plugin Name: Nexus Elements
  * Description: A premium collection of custom Elementor widgets.
  * Plugin URI:  https://yourfreelancesite.com/
- * Version:     1.2.1
+ * Version:     1.2.2
  * Author:      Mubashir Zulfiqar
  * Text Domain: nexus-elements
  */
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'NEXUS_ELEMENTS_VERSION', '1.2.1' );
+define( 'NEXUS_ELEMENTS_VERSION', '1.2.2' );
 define( 'NEXUS_ELEMENTS_MINIMUM_ELEMENTOR_VERSION', '3.0.0' );
 
 /**
