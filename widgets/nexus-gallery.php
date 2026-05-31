@@ -215,9 +215,42 @@ class Nexus_Gallery_Widget extends \Elementor\Widget_Base
             $this->add_control('query_per_page', [
                 'label' => esc_html__('Items to Show', 'nexus-elements'),
                 'type' => \Elementor\Controls_Manager::NUMBER,
-                'default' => 24,
-                'min' => 1,
+                'default' => '',
+                'min' => 0,
                 'max' => 500,
+                'description' => esc_html__('Leave empty to show all items.', 'nexus-elements'),
+            ]);
+
+            $this->add_control('show_more_enabled', [
+                'label' => esc_html__('Show More Button', 'nexus-elements'),
+                'type' => \Elementor\Controls_Manager::SWITCHER,
+                'default' => '',
+                'return_value' => 'yes',
+                'description' => esc_html__('Show a "Show More" button to progressively reveal items.', 'nexus-elements'),
+                'condition' => ['query_per_page!' => ''],
+            ]);
+
+            $this->add_control('show_more_text', [
+                'label' => esc_html__('Button Text', 'nexus-elements'),
+                'type' => \Elementor\Controls_Manager::TEXT,
+                'default' => esc_html__('Show More', 'nexus-elements'),
+                'condition' => [
+                    'query_per_page!' => '',
+                    'show_more_enabled' => 'yes',
+                ],
+            ]);
+
+            $this->add_control('show_more_increment', [
+                'label' => esc_html__('Items Per Click', 'nexus-elements'),
+                'type' => \Elementor\Controls_Manager::NUMBER,
+                'default' => 12,
+                'min' => 1,
+                'max' => 100,
+                'description' => esc_html__('Number of additional items to reveal each time.', 'nexus-elements'),
+                'condition' => [
+                    'query_per_page!' => '',
+                    'show_more_enabled' => 'yes',
+                ],
             ]);
 
             $this->add_control('query_orderby', [
@@ -541,12 +574,17 @@ class Nexus_Gallery_Widget extends \Elementor\Widget_Base
                 $exclude_ids = array_filter(array_map('intval', explode(',', $raw_exclude)));
             }
 
+            $raw_per_page = $settings['query_per_page'] ?? '';
+            $per_page     = ($raw_per_page === '' || $raw_per_page === null) ? -1 : max(1, intval($raw_per_page));
+            $show_more_on = ('yes' === ($settings['show_more_enabled'] ?? '')) && $per_page > 0;
+
+            // When Show More is enabled we need ALL matching posts so JS can paginate
             $query_args = [
-                'post_type' => 'nexus_gallery_item',
-                'posts_per_page' => max(1, intval($settings['query_per_page'] ?? 24)),
-                'orderby' => sanitize_key($settings['query_orderby'] ?? 'date'),
-                'order' => in_array($settings['query_order'] ?? 'DESC', ['ASC', 'DESC'], true) ? $settings['query_order'] : 'DESC',
-                'no_found_rows' => true,
+                'post_type'      => 'nexus_gallery_item',
+                'posts_per_page' => $show_more_on ? -1 : $per_page,
+                'orderby'        => sanitize_key($settings['query_orderby'] ?? 'date'),
+                'order'          => in_array($settings['query_order'] ?? 'DESC', ['ASC', 'DESC'], true) ? $settings['query_order'] : 'DESC',
+                'no_found_rows'  => true,
             ];
             if (!empty($meta_query))
                 $query_args['meta_query'] = $meta_query;
@@ -645,6 +683,14 @@ class Nexus_Gallery_Widget extends \Elementor\Widget_Base
         if (empty($items_data))
             return;
 
+        // Show More settings (addon path only)
+        $show_more_on   = $addon_active && ('yes' === ($settings['show_more_enabled'] ?? ''));
+        $raw_per_page   = $settings['query_per_page'] ?? '';
+        $initial_count  = ($raw_per_page !== '' && $raw_per_page !== null && intval($raw_per_page) > 0) ? intval($raw_per_page) : 0;
+        $show_more_on   = $show_more_on && $initial_count > 0;
+        $increment      = max(1, intval($settings['show_more_increment'] ?? 12));
+        $show_more_text = $settings['show_more_text'] ?? esc_html__('Show More', 'nexus-elements');
+
         // ── Build unique category list for filter bar ────────────────────────
         $categories = [];
         foreach ($items_data as $item) {
@@ -655,7 +701,11 @@ class Nexus_Gallery_Widget extends \Elementor\Widget_Base
         }
         $has_filter = $show_filter && count($categories) > 0;
         ?>
-        <div id="<?php echo esc_attr($uid); ?>" class="nexus-gallery-wrapper">
+        <div id="<?php echo esc_attr($uid); ?>" class="nexus-gallery-wrapper"
+             <?php if ($show_more_on): ?>
+             data-initial="<?php echo esc_attr($initial_count); ?>"
+             data-increment="<?php echo esc_attr($increment); ?>"
+             <?php endif; ?>>
 
             <?php if ($has_filter): ?>
             <div class="nexus-gallery-filter" role="group" aria-label="<?php esc_attr_e('Filter gallery', 'nexus-elements'); ?>">
@@ -668,10 +718,10 @@ class Nexus_Gallery_Widget extends \Elementor\Widget_Base
 
             <div class="nexus-gallery-grid" data-layout="<?php echo esc_attr($layout); ?>">
                 <?php
-                foreach ($items_data as $item):
+                foreach ($items_data as $idx => $item):
                     $is_video = ('video' === $item['type']);
                     ?>
-                <div class="nexus-gallery-item nexus-gallery-type-<?php echo esc_attr($item['type']); ?>"
+                <div class="nexus-gallery-item nexus-gallery-type-<?php echo esc_attr($item['type']); ?><?php if ($show_more_on && $idx >= $initial_count) echo ' nexus-gallery-hidden'; ?>"
                      data-category="<?php echo esc_attr($item['category']); ?>">
                     <?php
                     $lb_href = $item['href'];
@@ -724,6 +774,12 @@ class Nexus_Gallery_Widget extends \Elementor\Widget_Base
                 </div>
                 <?php endforeach; ?>
             </div>
+
+            <?php if ($show_more_on && count($items_data) > $initial_count): ?>
+            <div class="nexus-gallery-show-more-wrap">
+                <button type="button" class="nexus-gallery-show-more-btn"><?php echo esc_html($show_more_text); ?></button>
+            </div>
+            <?php endif; ?>
         </div>
 
         <style>
@@ -772,6 +828,12 @@ class Nexus_Gallery_Widget extends \Elementor\Widget_Base
 
         /* ── Badges ── */
         #<?php echo esc_attr($uid); ?> .nexus-gallery-duration { position:absolute; bottom:.5rem; right:.5rem; padding:.2rem .5rem; border-radius:4px; font-size:.75rem; font-weight:600; z-index:2; }
+
+        /* ── Show More ── */
+        #<?php echo esc_attr($uid); ?> .nexus-gallery-hidden { display:none !important; }
+        #<?php echo esc_attr($uid); ?> .nexus-gallery-show-more-wrap { text-align:center; margin-top:var(--ng-gap,16px); }
+        #<?php echo esc_attr($uid); ?> .nexus-gallery-show-more-btn { border:none; cursor:pointer; padding:.75rem 2.5rem; border-radius:9999px; font-size:.95rem; font-weight:600; background:linear-gradient(135deg,#d63384,#6f42c1); color:#fff; transition:opacity .25s,transform .25s; }
+        #<?php echo esc_attr($uid); ?> .nexus-gallery-show-more-btn:hover { opacity:.9; transform:translateY(-1px); }
         #<?php echo esc_attr($uid); ?> .nexus-gallery-type-badge { position:absolute; top:.5rem; left:.5rem; width:24px; height:24px; background:rgba(0,0,0,.6); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:2; }
 
         /* ── Responsive ── */
@@ -791,18 +853,69 @@ class Nexus_Gallery_Widget extends \Elementor\Widget_Base
         (function(){
             var wrapper = document.getElementById('<?php echo esc_js($uid); ?>');
             if(!wrapper) return;
-            var btns  = wrapper.querySelectorAll('.nexus-gallery-filter-btn');
-            var items = wrapper.querySelectorAll('.nexus-gallery-item');
+
+            var allItems    = Array.prototype.slice.call(wrapper.querySelectorAll('.nexus-gallery-item'));
+            var btns        = wrapper.querySelectorAll('.nexus-gallery-filter-btn');
+            var moreBtn     = wrapper.querySelector('.nexus-gallery-show-more-btn');
+            var initial     = parseInt(wrapper.getAttribute('data-initial')) || 0;
+            var increment   = parseInt(wrapper.getAttribute('data-increment')) || 12;
+            var showMoreOn  = initial > 0 && moreBtn;
+            var activeFilter= 'all';
+            var visibleCount= initial;
+
+            function getFiltered(){
+                return allItems.filter(function(item){
+                    return activeFilter === 'all' || item.getAttribute('data-category') === activeFilter;
+                });
+            }
+
+            function applyVisibility(){
+                var filtered = getFiltered();
+                var shown = 0;
+                allItems.forEach(function(item){
+                    var matchesFilter = activeFilter === 'all' || item.getAttribute('data-category') === activeFilter;
+                    if(!matchesFilter){
+                        item.style.display = 'none';
+                        item.classList.add('nexus-gallery-hidden');
+                        return;
+                    }
+                    if(showMoreOn && shown >= visibleCount){
+                        item.style.display = 'none';
+                        item.classList.add('nexus-gallery-hidden');
+                    } else {
+                        item.style.display = '';
+                        item.classList.remove('nexus-gallery-hidden');
+                    }
+                    shown++;
+                });
+                if(moreBtn){
+                    var totalFiltered = filtered.length;
+                    var currentlyShown = showMoreOn ? Math.min(visibleCount, totalFiltered) : totalFiltered;
+                    moreBtn.parentElement.style.display = (showMoreOn && currentlyShown < totalFiltered) ? '' : 'none';
+                }
+            }
+
+            /* Filter bar */
             btns.forEach(function(btn){
                 btn.addEventListener('click', function(){
                     btns.forEach(function(b){ b.classList.remove('active'); });
                     btn.classList.add('active');
-                    var filter = btn.getAttribute('data-filter');
-                    items.forEach(function(item){
-                        item.style.display = (filter==='all' || item.getAttribute('data-category')===filter) ? '' : 'none';
-                    });
+                    activeFilter = btn.getAttribute('data-filter');
+                    visibleCount = initial; /* reset on filter change */
+                    applyVisibility();
                 });
             });
+
+            /* Show More button */
+            if(moreBtn){
+                moreBtn.addEventListener('click', function(){
+                    visibleCount += increment;
+                    applyVisibility();
+                });
+            }
+
+            /* Initial render */
+            applyVisibility();
         })();
         </script>
         <?php
